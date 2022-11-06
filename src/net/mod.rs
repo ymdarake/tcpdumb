@@ -1,4 +1,4 @@
-use pnet::datalink::{self, NetworkInterface};
+use pnet::datalink::{self, DataLinkReceiver, NetworkInterface};
 
 use pnet::packet::arp::ArpPacket;
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket, MutableEthernetPacket};
@@ -14,11 +14,16 @@ use pnet::util::MacAddr;
 
 use std::net::IpAddr;
 
-fn handle_udp_packet(interface_name: &str, source: IpAddr, destination: IpAddr, packet: &[u8]) {
+fn handle_udp_packet(
+    interface_name: &str,
+    source: IpAddr,
+    destination: IpAddr,
+    packet: &[u8],
+) -> String {
     let udp = UdpPacket::new(packet);
 
     if let Some(udp) = udp {
-        println!(
+        format!(
             "[{}]: UDP Packet: {}:{} > {}:{}; length: {}",
             interface_name,
             source,
@@ -26,39 +31,44 @@ fn handle_udp_packet(interface_name: &str, source: IpAddr, destination: IpAddr, 
             destination,
             udp.get_destination(),
             udp.get_length()
-        );
+        )
     } else {
-        println!("[{}]: Malformed UDP Packet", interface_name);
+        format!("[{}]: Malformed UDP Packet", interface_name)
     }
 }
 
-fn handle_icmp_packet(interface_name: &str, source: IpAddr, destination: IpAddr, packet: &[u8]) {
+fn handle_icmp_packet(
+    interface_name: &str,
+    source: IpAddr,
+    destination: IpAddr,
+    packet: &[u8],
+) -> String {
     let icmp_packet = IcmpPacket::new(packet);
     if let Some(icmp_packet) = icmp_packet {
         match icmp_packet.get_icmp_type() {
             IcmpTypes::EchoReply => {
                 let echo_reply_packet = echo_reply::EchoReplyPacket::new(packet).unwrap();
-                println!(
+                format!(
                     "[{}]: ICMP echo reply {} -> {} (seq={:?}, id={:?})",
                     interface_name,
                     source,
                     destination,
                     echo_reply_packet.get_sequence_number(),
                     echo_reply_packet.get_identifier()
-                );
+                )
             }
             IcmpTypes::EchoRequest => {
                 let echo_request_packet = echo_request::EchoRequestPacket::new(packet).unwrap();
-                println!(
+                format!(
                     "[{}]: ICMP echo request {} -> {} (seq={:?}, id={:?})",
                     interface_name,
                     source,
                     destination,
                     echo_request_packet.get_sequence_number(),
                     echo_request_packet.get_identifier()
-                );
+                )
             }
-            _ => println!(
+            _ => format!(
                 "[{}]: ICMP packet {} -> {} (type={:?})",
                 interface_name,
                 source,
@@ -67,14 +77,19 @@ fn handle_icmp_packet(interface_name: &str, source: IpAddr, destination: IpAddr,
             ),
         }
     } else {
-        println!("[{}]: Malformed ICMP Packet", interface_name);
+        format!("[{}]: Malformed ICMP Packet", interface_name)
     }
 }
 
-fn handle_icmpv6_packet(interface_name: &str, source: IpAddr, destination: IpAddr, packet: &[u8]) {
+fn handle_icmpv6_packet(
+    interface_name: &str,
+    source: IpAddr,
+    destination: IpAddr,
+    packet: &[u8],
+) -> String {
     let icmpv6_packet = Icmpv6Packet::new(packet);
     if let Some(icmpv6_packet) = icmpv6_packet {
-        println!(
+        format!(
             "[{}]: ICMPv6 packet {} -> {} (type={:?})",
             interface_name,
             source,
@@ -82,14 +97,19 @@ fn handle_icmpv6_packet(interface_name: &str, source: IpAddr, destination: IpAdd
             icmpv6_packet.get_icmpv6_type()
         )
     } else {
-        println!("[{}]: Malformed ICMPv6 Packet", interface_name);
+        format!("[{}]: Malformed ICMPv6 Packet", interface_name)
     }
 }
 
-fn handle_tcp_packet(interface_name: &str, source: IpAddr, destination: IpAddr, packet: &[u8]) {
+fn handle_tcp_packet(
+    interface_name: &str,
+    source: IpAddr,
+    destination: IpAddr,
+    packet: &[u8],
+) -> String {
     let tcp = TcpPacket::new(packet);
     if let Some(tcp) = tcp {
-        println!(
+        format!(
             "[{}]: TCP Packet: {}:{} > {}:{}; length: {}",
             interface_name,
             source,
@@ -97,9 +117,9 @@ fn handle_tcp_packet(interface_name: &str, source: IpAddr, destination: IpAddr, 
             destination,
             tcp.get_destination(),
             packet.len()
-        );
+        )
     } else {
-        println!("[{}]: Malformed TCP Packet", interface_name);
+        format!("[{}]: Malformed TCP Packet", interface_name)
     }
 }
 
@@ -109,7 +129,7 @@ fn handle_transport_protocol(
     destination: IpAddr,
     protocol: IpNextHeaderProtocol,
     packet: &[u8],
-) {
+) -> String {
     match protocol {
         IpNextHeaderProtocols::Udp => {
             handle_udp_packet(interface_name, source, destination, packet)
@@ -123,7 +143,7 @@ fn handle_transport_protocol(
         IpNextHeaderProtocols::Icmpv6 => {
             handle_icmpv6_packet(interface_name, source, destination, packet)
         }
-        _ => println!(
+        _ => format!(
             "[{}]: Unknown {} packet: {} > {}; protocol: {:?} length: {}",
             interface_name,
             match source {
@@ -138,7 +158,7 @@ fn handle_transport_protocol(
     }
 }
 
-fn handle_ipv4_packet(interface_name: &str, ethernet: &EthernetPacket) {
+fn handle_ipv4_packet(interface_name: &str, ethernet: &EthernetPacket) -> String {
     let header = Ipv4Packet::new(ethernet.payload());
     if let Some(header) = header {
         handle_transport_protocol(
@@ -147,13 +167,13 @@ fn handle_ipv4_packet(interface_name: &str, ethernet: &EthernetPacket) {
             IpAddr::V4(header.get_destination()),
             header.get_next_level_protocol(),
             header.payload(),
-        );
+        )
     } else {
-        println!("[{}]: Malformed IPv4 Packet", interface_name);
+        format!("[{}]: Malformed IPv4 Packet", interface_name)
     }
 }
 
-fn handle_ipv6_packet(interface_name: &str, ethernet: &EthernetPacket) {
+fn handle_ipv6_packet(interface_name: &str, ethernet: &EthernetPacket) -> String {
     let header = Ipv6Packet::new(ethernet.payload());
     if let Some(header) = header {
         handle_transport_protocol(
@@ -162,16 +182,16 @@ fn handle_ipv6_packet(interface_name: &str, ethernet: &EthernetPacket) {
             IpAddr::V6(header.get_destination()),
             header.get_next_header(),
             header.payload(),
-        );
+        )
     } else {
-        println!("[{}]: Malformed IPv6 Packet", interface_name);
+        format!("[{}]: Malformed IPv6 Packet", interface_name)
     }
 }
 
-fn handle_arp_packet(interface_name: &str, ethernet: &EthernetPacket) {
+fn handle_arp_packet(interface_name: &str, ethernet: &EthernetPacket) -> String {
     let header = ArpPacket::new(ethernet.payload());
     if let Some(header) = header {
-        println!(
+        format!(
             "[{}]: ARP packet: {}({}) > {}({}); operation: {:?}",
             interface_name,
             ethernet.get_source(),
@@ -179,19 +199,19 @@ fn handle_arp_packet(interface_name: &str, ethernet: &EthernetPacket) {
             ethernet.get_destination(),
             header.get_target_proto_addr(),
             header.get_operation()
-        );
+        )
     } else {
-        println!("[{}]: Malformed ARP Packet", interface_name);
+        format!("[{}]: Malformed ARP Packet", interface_name)
     }
 }
 
-fn handle_ethernet_frame(interface: &NetworkInterface, ethernet: &EthernetPacket) {
+fn handle_ethernet_frame(interface: &NetworkInterface, ethernet: &EthernetPacket) -> String {
     let interface_name = &interface.name[..];
     match ethernet.get_ethertype() {
         EtherTypes::Ipv4 => handle_ipv4_packet(interface_name, ethernet),
         EtherTypes::Ipv6 => handle_ipv6_packet(interface_name, ethernet),
         EtherTypes::Arp => handle_arp_packet(interface_name, ethernet),
-        _ => println!(
+        _ => format!(
             "[{}]: Unknown packet: {} > {}; ethertype: {:?} length: {}",
             interface_name,
             ethernet.get_source(),
@@ -206,59 +226,51 @@ pub fn list_interfaces() -> Vec<NetworkInterface> {
     datalink::interfaces()
 }
 
-pub fn monitor(interface: &NetworkInterface) {
+pub fn new_receiver(interface: &NetworkInterface) -> Option<Box<dyn DataLinkReceiver>> {
     use pnet::datalink::Channel::Ethernet;
-
-    // Create a channel to receive on
-    let (_, mut rx) = match datalink::channel(interface, Default::default()) {
-        Ok(Ethernet(tx, rx)) => (tx, rx),
+    match datalink::channel(interface, Default::default()) {
+        Ok(Ethernet(_, rx)) => Some(rx),
         Ok(_) => panic!("packetdump: unhandled channel type"),
         Err(e) => panic!("packetdump: unable to create channel: {}", e),
-    };
+    }
+}
 
-    loop {
-        let mut buf: [u8; 1600] = [0u8; 1600];
-        let mut fake_ethernet_frame = MutableEthernetPacket::new(&mut buf[..]).unwrap();
-        match rx.next() {
-            Ok(packet) => {
-                let payload_offset;
-                if cfg!(any(target_os = "macos", target_os = "ios"))
-                    && interface.is_up()
-                    && !interface.is_broadcast()
-                    && ((!interface.is_loopback() && interface.is_point_to_point())
-                        || interface.is_loopback())
-                {
-                    if interface.is_loopback() {
-                        // The pnet code for BPF loopback adds a zero'd out Ethernet header
-                        payload_offset = 14;
-                    } else {
-                        // Maybe is TUN interface
-                        payload_offset = 0;
-                    }
-                    if packet.len() > payload_offset {
-                        let version = Ipv4Packet::new(&packet[payload_offset..])
-                            .unwrap()
-                            .get_version();
-                        if version == 4 {
-                            fake_ethernet_frame.set_destination(MacAddr(0, 0, 0, 0, 0, 0));
-                            fake_ethernet_frame.set_source(MacAddr(0, 0, 0, 0, 0, 0));
-                            fake_ethernet_frame.set_ethertype(EtherTypes::Ipv4);
-                            fake_ethernet_frame.set_payload(&packet[payload_offset..]);
-                            handle_ethernet_frame(&interface, &fake_ethernet_frame.to_immutable());
-                            continue;
-                        } else if version == 6 {
-                            fake_ethernet_frame.set_destination(MacAddr(0, 0, 0, 0, 0, 0));
-                            fake_ethernet_frame.set_source(MacAddr(0, 0, 0, 0, 0, 0));
-                            fake_ethernet_frame.set_ethertype(EtherTypes::Ipv6);
-                            fake_ethernet_frame.set_payload(&packet[payload_offset..]);
-                            handle_ethernet_frame(&interface, &fake_ethernet_frame.to_immutable());
-                            continue;
-                        }
-                    }
-                }
-                handle_ethernet_frame(&interface, &EthernetPacket::new(packet).unwrap());
+pub fn read_packet(interface: &NetworkInterface, packet: &[u8]) -> String {
+    let mut buf: [u8; 1600] = [0u8; 1600];
+    let mut fake_ethernet_frame = MutableEthernetPacket::new(&mut buf[..]).unwrap();
+
+    let payload_offset;
+    if cfg!(any(target_os = "macos", target_os = "ios"))
+        && interface.is_up()
+        && !interface.is_broadcast()
+        && ((!interface.is_loopback() && interface.is_point_to_point()) || interface.is_loopback())
+    {
+        if interface.is_loopback() {
+            // The pnet code for BPF loopback adds a zero'd out Ethernet header
+            payload_offset = 14;
+        } else {
+            // Maybe is TUN interface
+            payload_offset = 0;
+        }
+        if packet.len() > payload_offset {
+            let version = Ipv4Packet::new(&packet[payload_offset..])
+                .unwrap()
+                .get_version();
+            if version == 4 {
+                fake_ethernet_frame.set_destination(MacAddr(0, 0, 0, 0, 0, 0));
+                fake_ethernet_frame.set_source(MacAddr(0, 0, 0, 0, 0, 0));
+                fake_ethernet_frame.set_ethertype(EtherTypes::Ipv4);
+                fake_ethernet_frame.set_payload(&packet[payload_offset..]);
+                return handle_ethernet_frame(&interface, &fake_ethernet_frame.to_immutable());
             }
-            Err(e) => panic!("packetdump: unable to receive packet: {}", e),
+            if version == 6 {
+                fake_ethernet_frame.set_destination(MacAddr(0, 0, 0, 0, 0, 0));
+                fake_ethernet_frame.set_source(MacAddr(0, 0, 0, 0, 0, 0));
+                fake_ethernet_frame.set_ethertype(EtherTypes::Ipv6);
+                fake_ethernet_frame.set_payload(&packet[payload_offset..]);
+                return handle_ethernet_frame(&interface, &fake_ethernet_frame.to_immutable());
+            }
         }
     }
+    return handle_ethernet_frame(&interface, &EthernetPacket::new(packet).unwrap());
 }
